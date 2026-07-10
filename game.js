@@ -26,12 +26,16 @@
   const POOL = DATA.cats;
 
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  const SYNTH = window.speechSynthesis || null;
+  const STORAGE_VOICE = "daily-jeopardy-voice";
 
   let state = null;       // persistent game state
   let active = null;      // {row, col, answer, judged}
   let buzzTimer = null;   // interval for the buzz countdown
   let listenTimer = null; // timeout for the listening window
+  let readTimer = null;   // fallback in case TTS never fires onend
   let recognizer = null;
+  let hostVoice; // cached SpeechSynthesisVoice (undefined = not picked yet)
 
   /* ---------- seeded RNG ---------- */
   function xmur3(str) {
@@ -95,6 +99,56 @@
   function score() { return state.results.filter((r) => r === 1).length; }
   function played() { return state.results.filter((r) => r !== null).length; }
   function micEnabled() { return !!SR && $("mic-toggle").checked; }
+  function voiceEnabled() { return !!SYNTH && $("voice-toggle").checked; }
+
+  /* ---------- host voice (text-to-speech) ---------- */
+  // The deepest, most game-show-host-like English voice the device offers.
+  function pickHostVoice() {
+    if (hostVoice !== undefined) return hostVoice;
+    const voices = SYNTH.getVoices().filter((v) => /^en\b/i.test(v.lang || ""));
+    if (!voices.length) return null; // list may load async — retry next clue
+    const prefer = ["Alex", "Daniel", "Aaron", "Matthew", "Fred",
+                    "Google US English", "Microsoft Guy", "Microsoft David"];
+    hostVoice = prefer.map((n) => voices.find((v) => v.name.includes(n))).find(Boolean)
+      || voices.find((v) => v.lang === "en-US") || voices[0] || null;
+    return hostVoice;
+  }
+
+  function stopSpeaking() {
+    if (readTimer) { clearTimeout(readTimer); readTimer = null; }
+    if (SYNTH) { try { SYNTH.cancel(); } catch (e) {} }
+    $("reading-note").classList.add("hidden");
+  }
+
+  // Read the clue aloud, then start the buzz countdown when done
+  // (buzzing early is allowed and simply cuts the host off).
+  function beginClue(clueText) {
+    const me = active;
+    let started = false;
+    const startTimer = () => {
+      if (started || active !== me) return; // stale event from a previous clue
+      started = true;
+      $("reading-note").classList.add("hidden");
+      startBuzzCountdown();
+    };
+    if (!voiceEnabled()) { startTimer(); return; }
+    try {
+      stopSpeaking();
+      const u = new SpeechSynthesisUtterance(clueText);
+      const v = pickHostVoice();
+      if (v) u.voice = v;
+      u.rate = 0.95;
+      u.pitch = 0.8;
+      u.onend = startTimer;
+      u.onerror = startTimer;
+      $("reading-note").classList.remove("hidden");
+      SYNTH.speak(u);
+      // some browsers never fire onend — estimate the reading time instead
+      readTimer = setTimeout(startTimer, Math.min(16000, 2500 + clueText.length * 75));
+    } catch (e) {
+      startTimer();
+    }
+  }
 
   /* ---------- answer matching ---------- */
   function normalize(s) {
@@ -178,6 +232,12 @@
     } else {
       try { $("mic-toggle").checked = localStorage.getItem(STORAGE_MIC) !== "off"; } catch (e) {}
     }
+    if (!SYNTH) {
+      $("voice-row").classList.add("hidden");
+    } else {
+      try { $("voice-toggle").checked = localStorage.getItem(STORAGE_VOICE) !== "off"; } catch (e) {}
+      SYNTH.getVoices(); // warm up the async voice list
+    }
     const saved = loadSaved();
     $("resume-note").classList.toggle("hidden", !(saved && !saved.done));
   }
@@ -186,6 +246,7 @@
     try {
       localStorage.setItem(STORAGE_NAME, $("player-name").value.trim());
       localStorage.setItem(STORAGE_MIC, $("mic-toggle").checked ? "on" : "off");
+      localStorage.setItem(STORAGE_VOICE, $("voice-toggle").checked ? "on" : "off");
     } catch (e) {}
 
     const seed = mode === "daily"
@@ -265,7 +326,7 @@
     $("next-btn").classList.add("hidden");
     showState("state-buzz");
     $("clue-modal").classList.remove("hidden");
-    startBuzzCountdown();
+    beginClue(clueText);
   }
 
   function startBuzzCountdown() {
@@ -289,6 +350,7 @@
 
   function buzz() {
     stopBuzzCountdown();
+    stopSpeaking(); // cut the host off — and never let the mic hear the TTS
     if (micEnabled()) startListening();
     else showState("state-say");
   }
@@ -395,10 +457,12 @@
 
   function pass() {
     stopBuzzCountdown();
+    stopSpeaking();
     settle(0, null, "Passed — here's the answer:");
   }
 
   function nextClue() {
+    stopSpeaking();
     active = null;
     $("clue-modal").classList.add("hidden");
     if (state.results.every((r) => r !== null)) showResults();

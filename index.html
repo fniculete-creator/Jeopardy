@@ -20,6 +20,10 @@
       <input id="mic-toggle" type="checkbox" checked>
       Answer by voice (uses your microphone)
     </label>
+    <label id="voice-row" class="mic-row">
+      <input id="voice-toggle" type="checkbox" checked>
+      Host reads each clue aloud
+    </label>
     <p id="mic-unsupported" class="mic-note hidden">Voice answers aren't supported in this browser &mdash; you'll answer out loud and judge yourself.</p>
     <div class="setup-actions">
       <button id="start-daily" class="btn primary big">Play today's game</button>
@@ -52,6 +56,7 @@
     <!-- state: read + buzz -->
     <div id="state-buzz">
       <div class="timer-track"><div id="buzz-timer" class="timer-fill"></div></div>
+      <div id="reading-note" class="reading-note hidden">🔊 The host is reading the clue&hellip;</div>
       <button id="buzz-btn" class="buzz-btn">TAP TO<br>BUZZ IN</button>
       <button id="pass-btn" class="btn small ghost">Pass (reveal answer)</button>
     </div>
