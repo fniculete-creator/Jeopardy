@@ -43,8 +43,8 @@ python3 leaderboard/server.py            # port 8124, db jeopardy-lb.db
 ## API
 
 - `POST /jeopardy/scores` — body `{seed, name, score, total, grid}`;
-  `seed` is the daily date `YYYY-MM-DD`, `total` must be 30. Returns the
-  updated board.
+  `seed` is the daily date `YYYY-MM-DD`, `total` must be 18000 (dollar
+  scoring, 6 × $200–$1,000). Returns the updated board.
 - `GET /jeopardy/scores?seed=YYYY-MM-DD` — board for that day, sorted by
   score desc then submission time.
 - `GET /jeopardy/health`

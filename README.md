@@ -7,16 +7,16 @@ Everyone who plays the daily game on the same calendar date gets the **exact sam
 ## How it works
 
 - **One round, 30 clues** (6 sports categories × 5 clues) — no Double Jeopardy, no Final Jeopardy, no wagering.
-- **Every clue is worth 1 point**, and wrong answers cost nothing — so always guess!
+- **Clues pay their board value** — $200 to $1,000, and since each category runs easy-to-hard, harder clues are worth more (a perfect board is $18,000). Wrong answers cost nothing — so always guess!
 - **The host reads each clue aloud** in a deep game-show voice (your device's best English text-to-speech voice — on Apple devices it's literally the one named "Alex"). The 12-second buzz timer starts when the host finishes; buzzing early just cuts the host off.
 - **Tap to buzz in**: hit the big red buzzer before the timer runs out.
 - **Answer by voice**: after buzzing, speak your answer into the microphone. Speech recognition transcribes it and checks it against the real answer (fuzzy matching handles "what is…" phrasing, articles, close spellings, and accepted alternates). If it mishears you, one tap fixes the verdict.
 - **No mic? No problem**: on browsers without speech recognition (or if you decline mic access), you say your answer out loud, reveal the real one, and judge yourself.
-- At the end you get a score out of 30 and a shareable emoji grid of your board:
+- At the end you get your winnings and a shareable emoji grid of your board:
 
 ```
 Daily Sports Jeopardy! 2026-07-10 — Ana
-21/30
+$13,400 (21/30)
 🟩🟩🟥🟩🟩🟩
 🟩🟥🟩🟩🟩🟥
 ...

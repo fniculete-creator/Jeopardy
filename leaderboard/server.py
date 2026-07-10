@@ -28,7 +28,7 @@ from urllib.parse import urlparse, parse_qs
 SEED_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 NAME_MAX = 20
 GRID_MAX = 400
-TOTAL = 30
+TOTAL = 18000  # 6 categories x ($200+$400+$600+$800+$1000)
 
 db_lock = threading.Lock()
 db = None  # set in main()

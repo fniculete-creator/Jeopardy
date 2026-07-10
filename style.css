@@ -264,6 +264,7 @@ body {
   text-shadow: 2px 2px 0 #000;
   margin: 10px 0;
 }
+.results-sub { color: #aab2ff; font-size: .9rem; margin: -4px 0 6px; }
 .results-grid {
   white-space: pre;
   font-size: 1.5rem;

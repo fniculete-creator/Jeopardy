@@ -3,7 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Daily Sports Jeopardy!</title>
+<title>Sports Jeopardy!</title>
+<meta name="description" content="Daily sports trivia from real Jeopardy! clues — same board for everyone, every day. Buzz in, answer by voice, top the leaderboard.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Sports Jeopardy!">
+<meta property="og:description" content="Daily sports trivia from real Jeopardy! clues — same board for everyone, every day.">
+<meta property="og:image" content="https://fniculete-creator.github.io/Jeopardy/preview.png">
+<meta property="og:url" content="https://fniculete-creator.github.io/Jeopardy/">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='15' fill='%23060ce9'/%3E%3Ctext x='50' y='72' font-size='64' text-anchor='middle' fill='%23ffcc00' font-family='Georgia' font-weight='bold'%3EJ!%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -12,7 +19,7 @@
 <!-- ===== Setup screen ===== -->
 <div id="setup-screen" class="screen">
   <h1 class="logo">SPORTS&nbsp;JEOPARDY!</h1>
-  <p class="tagline">Real sports clues from past Jeopardy! episodes. Same board for everyone, every day &mdash; tap to buzz in, answer out loud, 1 point per clue.</p>
+  <p class="tagline">Real sports clues from past Jeopardy! episodes. Same board for everyone, every day &mdash; tap to buzz in, answer out loud, win each clue's dollar value.</p>
   <div class="setup-card">
     <label class="field-label" for="player-name">Your name</label>
     <input id="player-name" type="text" maxlength="20" placeholder="Your name">
@@ -26,9 +33,9 @@
     </label>
     <p id="mic-unsupported" class="mic-note hidden">Voice answers aren't supported in this browser &mdash; you'll answer out loud and judge yourself.</p>
     <div class="setup-actions">
-      <button id="start-daily" class="btn primary big">Play today's game</button>
-      <button id="start-random" class="btn big">Play a random game</button>
-      <button id="show-lb" class="btn big">Today's leaderboard</button>
+      <button id="start-daily" class="btn primary big">Play Today's Game</button>
+      <button id="start-random" class="btn big">Play a Random Game</button>
+      <button id="show-lb" class="btn big">Today's Leaderboard</button>
     </div>
     <p id="resume-note" class="hidden">A game in progress was found &mdash; starting will resume it.</p>
   </div>
@@ -41,11 +48,11 @@
     <span id="game-date"></span>
     <span class="header-actions">
       <span id="score-chip">0 pts</span>
-      <button id="quit-game" class="btn small danger">End game</button>
+      <button id="quit-game" class="btn small danger">End Game</button>
     </span>
   </header>
   <div id="board"></div>
-  <p class="board-hint">Every clue is worth 1 point. Wrong guesses cost nothing &mdash; so guess!</p>
+  <p class="board-hint">Clues pay their dollar value &mdash; harder clues are worth more. Wrong guesses cost nothing, so guess!</p>
 </div>
 
 <!-- ===== Clue modal ===== -->
@@ -99,15 +106,16 @@
   <div class="modal-box">
     <div class="clue-cat">GAME OVER</div>
     <div id="results-score" class="results-score"></div>
+    <div id="results-sub" class="results-sub"></div>
     <div id="results-grid" class="results-grid"></div>
     <div id="results-lb" class="lb-section hidden">
-      <div class="lb-title">Today's leaderboard</div>
+      <div class="lb-title">Today's Leaderboard</div>
       <p id="lb-no-name" class="mic-note hidden">Enter a name on the start screen to appear on the leaderboard.</p>
       <div id="results-lb-list" class="lb-list"></div>
     </div>
     <div class="setup-actions">
-      <button id="copy-results" class="btn primary">Copy results to share</button>
-      <button id="back-to-menu" class="btn">Back to menu</button>
+      <button id="copy-results" class="btn primary">Copy Results to Share</button>
+      <button id="back-to-menu" class="btn">Back to Menu</button>
     </div>
   </div>
 </div>

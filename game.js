@@ -17,7 +17,10 @@
   const STORAGE_NAME = "daily-jeopardy-name";
   const STORAGE_MIC = "daily-jeopardy-mic";
   const COLS = 6, ROWS = 5;
-  const VALUES = [200, 400, 600, 800, 1000]; // display only; every clue = 1 pt
+  // Clues in each category are in original board order, easy to hard, so
+  // the dollar value doubles as the difficulty — and the score.
+  const VALUES = [200, 400, 600, 800, 1000];
+  const MAX_SCORE = VALUES.reduce((a, b) => a + b, 0) * COLS; // $18,000
   const BUZZ_SECONDS = 12;   // time to buzz in after the clue appears
   const LISTEN_SECONDS = 8;  // time to speak an answer after buzzing
 
@@ -102,7 +105,12 @@
 
   /* ---------- helpers ---------- */
   const $ = (id) => document.getElementById(id);
-  function score() { return state.results.filter((r) => r === 1).length; }
+  function fmt$(n) { return "$" + n.toLocaleString("en-US"); }
+  function score() {
+    return state.results.reduce(
+      (sum, r, i) => sum + (r === 1 ? VALUES[Math.floor(i / COLS)] : 0), 0);
+  }
+  function rightCount() { return state.results.filter((r) => r === 1).length; }
   function played() { return state.results.filter((r) => r !== null).length; }
   function micEnabled() { return !!SR && $("mic-toggle").checked; }
   function voiceEnabled() { return !!SYNTH && $("voice-toggle").checked; }
@@ -282,7 +290,7 @@
   }
 
   function renderScore() {
-    $("score-chip").textContent = `${score()} / ${played()} pts`;
+    $("score-chip").textContent = `${fmt$(score())} · ${played()}/${COLS * ROWS}`;
   }
 
   function renderBoard() {
@@ -422,7 +430,8 @@
 
     showState("state-verdict");
     const banner = $("verdict-banner");
-    banner.textContent = note || (right ? "✅ Correct! +1 point" : "❌ Not quite.");
+    banner.textContent = note ||
+      (right ? `✅ Correct! +${fmt$(VALUES[active.row])}` : "❌ Not quite.");
     banner.className = "verdict " + (right ? "good" : "bad");
     if (heard) {
       $("heard-line").textContent = `You said: “${heard}”`;
@@ -446,7 +455,7 @@
 
   function selfJudge(right) {
     $("self-judge").classList.add("hidden");
-    settle(right, null, right ? "✅ Correct! +1 point" : "❌ Not quite.");
+    settle(right, null, null);
   }
 
   function overrideVerdict() {
@@ -456,7 +465,8 @@
     save();
     renderScore();
     const banner = $("verdict-banner");
-    banner.textContent = flipped ? "✅ Fixed — +1 point" : "Okay — no point";
+    banner.textContent = flipped
+      ? `✅ Fixed — +${fmt$(VALUES[active.row])}` : "Okay — no money";
     banner.className = "verdict " + (flipped ? "good" : "bad");
     $("override-row").classList.add("hidden");
   }
@@ -484,7 +494,7 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         seed: state.seed, name: playerName(),
-        score: score(), total: COLS * ROWS, grid: emojiGrid(),
+        score: score(), total: MAX_SCORE, grid: emojiGrid(),
       }),
     });
     if (!res.ok) throw new Error("submit failed: " + res.status);
@@ -514,7 +524,7 @@
       row.innerHTML =
         `<span class="lb-rank">${badge}</span>` +
         `<span class="lb-name"></span>` +
-        `<span class="lb-score">${e.score}/${e.total}</span>`;
+        `<span class="lb-score">${fmt$(e.score)}</span>`;
       row.querySelector(".lb-name").textContent = e.name;
       el.appendChild(row);
     });
@@ -572,7 +582,9 @@
     save();
     $("game-screen").classList.add("hidden");
     $("clue-modal").classList.add("hidden");
-    $("results-score").textContent = `${score()} / ${COLS * ROWS}`;
+    $("results-score").textContent = fmt$(score());
+    $("results-sub").textContent =
+      `${rightCount()} of ${COLS * ROWS} correct · max ${fmt$(MAX_SCORE)}`;
     $("results-grid").textContent = emojiGrid();
     $("lb-no-name").classList.add("hidden");
     $("results-modal").classList.remove("hidden");
@@ -585,11 +597,11 @@
       ? `Daily Sports Jeopardy! ${state.seed}`
       : "Sports Jeopardy! (random game)";
     const who = name ? ` — ${name}` : "";
-    const text = `${title}${who}\n${score()}/${COLS * ROWS}\n${emojiGrid()}`;
+    const text = `${title}${who}\n${fmt$(score())} (${rightCount()}/${COLS * ROWS})\n${emojiGrid()}`;
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(() => {
         $("copy-results").textContent = "Copied!";
-        setTimeout(() => { $("copy-results").textContent = "Copy results to share"; }, 1500);
+        setTimeout(() => { $("copy-results").textContent = "Copy Results to Share"; }, 1500);
       });
     } else {
       prompt("Copy your results:", text);
