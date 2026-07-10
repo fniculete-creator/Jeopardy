@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily Jeopardy!</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='15' fill='%23060ce9'/%3E%3Ctext x='50' y='72' font-size='64' text-anchor='middle' fill='%23ffcc00' font-family='Georgia' font-weight='bold'%3EJ!%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===== Setup screen ===== -->
+<div id="setup-screen" class="screen">
+  <h1 class="logo">DAILY&nbsp;JEOPARDY!</h1>
+  <p class="tagline">Real clues from past Jeopardy! episodes &mdash; same board for everyone, every day.</p>
+  <div class="setup-card">
+    <h2>Who's playing?</h2>
+    <div id="player-inputs"></div>
+    <button id="add-player" class="btn small">+ Add player</button>
+    <div class="setup-actions">
+      <button id="start-daily" class="btn primary big">Play today's game</button>
+      <button id="start-random" class="btn big">Play a random game</button>
+    </div>
+    <p id="resume-note" class="hidden">A game in progress was found &mdash; starting will resume it.</p>
+  </div>
+</div>
+
+<!-- ===== Game screen ===== -->
+<div id="game-screen" class="screen hidden">
+  <header id="game-header">
+    <span id="round-title">JEOPARDY!</span>
+    <span id="game-date"></span>
+    <span class="header-actions">
+      <button id="skip-round" class="btn small">Next round &raquo;</button>
+      <button id="quit-game" class="btn small danger">End game</button>
+    </span>
+  </header>
+  <div id="board"></div>
+  <div id="scoreboard"></div>
+</div>
+
+<!-- ===== Clue modal ===== -->
+<div id="clue-modal" class="modal hidden">
+  <div class="modal-box">
+    <div id="clue-category" class="clue-cat"></div>
+    <div id="dd-banner" class="hidden">
+      <div class="dd-title">DAILY&nbsp;DOUBLE!</div>
+      <div class="dd-controls">
+        <label>Who found it? <select id="dd-player"></select></label>
+        <label>Wager $<input id="dd-wager" type="number" min="5" step="5"></label>
+        <button id="dd-go" class="btn primary">Show clue</button>
+      </div>
+    </div>
+    <div id="clue-body" class="hidden">
+      <div id="clue-text" class="clue-text"></div>
+      <button id="reveal-answer" class="btn primary">Show answer</button>
+      <div id="answer-area" class="hidden">
+        <div id="answer-text" class="answer-text"></div>
+        <div id="judge-area">
+          <div class="judge-hint">Who got it? (tap name to score)</div>
+          <div id="judge-buttons"></div>
+          <button id="nobody-btn" class="btn">Nobody / close</button>
+        </div>
+      </div>
+    </div>
+    <div id="clue-source" class="clue-source"></div>
+  </div>
+</div>
+
+<!-- ===== Final Jeopardy modal ===== -->
+<div id="final-modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="clue-cat">FINAL JEOPARDY!</div>
+    <div id="final-category" class="final-cat"></div>
+    <div id="final-wagers"></div>
+    <button id="final-show-clue" class="btn primary">Lock wagers &amp; show clue</button>
+    <div id="final-clue-area" class="hidden">
+      <div id="final-clue-text" class="clue-text"></div>
+      <button id="final-reveal" class="btn primary">Show answer</button>
+      <div id="final-answer-area" class="hidden">
+        <div id="final-answer-text" class="answer-text"></div>
+        <div class="judge-hint">Mark each player right or wrong:</div>
+        <div id="final-judge"></div>
+        <button id="final-done" class="btn primary">Final scores</button>
+      </div>
+    </div>
+    <div id="final-source" class="clue-source"></div>
+  </div>
+</div>
+
+<!-- ===== Results modal ===== -->
+<div id="results-modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="clue-cat">FINAL SCORES</div>
+    <div id="results-list"></div>
+    <div class="setup-actions">
+      <button id="copy-results" class="btn primary">Copy results to share</button>
+      <button id="back-to-menu" class="btn">Back to menu</button>
+    </div>
+  </div>
+</div>
+
+<script src="clues.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
