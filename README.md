@@ -24,6 +24,12 @@ Daily Sports Jeopardy! 2026-07-10 — Ana
 
 Your game saves in the browser, so a refresh resumes where you left off. There's also a **random game** mode for extra rounds.
 
+## Leaderboard
+
+Daily games post to a **shared leaderboard**: finish today's board with a name entered and your score appears in the day's standings, shown right on the results screen (and anytime via the *Today's leaderboard* button on the start screen). Same name + same day = your latest score. Random games don't post.
+
+The backend is a tiny zero-dependency Python/SQLite server in [`leaderboard/`](leaderboard/) — see that folder's README for deploy instructions. If it's unreachable, the game just plays without standings.
+
 ## Playing it
 
 Open `index.html` in a browser. For a URL you can send to friends, enable GitHub Pages: repo **Settings → Pages → Source: Deploy from a branch**, pick your branch and `/ (root)` — the game goes live at `https://<username>.github.io/Jeopardy/`.

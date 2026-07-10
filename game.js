@@ -29,6 +29,12 @@
   const SYNTH = window.speechSynthesis || null;
   const STORAGE_VOICE = "daily-jeopardy-voice";
 
+  // Shared daily leaderboard backend (leaderboard/server.py). Local dev
+  // hits a locally-run server; anywhere else, the kalshi-bots box.
+  const LB_API = /^(localhost|127\.|192\.168\.)/.test(location.hostname)
+    ? `http://${location.hostname}:8124/jeopardy`
+    : "https://32.194.248.231.nip.io/jeopardy";
+
   let state = null;       // persistent game state
   let active = null;      // {row, col, answer, judged}
   let buzzTimer = null;   // interval for the buzz countdown
@@ -469,6 +475,85 @@
     else renderBoard();
   }
 
+  /* ---------- leaderboard ---------- */
+  function playerName() { return ($("player-name").value || "").trim(); }
+
+  async function submitScore() {
+    const res = await fetch(LB_API + "/scores", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        seed: state.seed, name: playerName(),
+        score: score(), total: COLS * ROWS, grid: emojiGrid(),
+      }),
+    });
+    if (!res.ok) throw new Error("submit failed: " + res.status);
+    return res.json();
+  }
+
+  async function fetchScores(seed) {
+    const res = await fetch(`${LB_API}/scores?seed=${encodeURIComponent(seed)}`);
+    if (!res.ok) throw new Error("fetch failed: " + res.status);
+    return res.json();
+  }
+
+  function renderLbList(el, entries, highlight) {
+    el.innerHTML = "";
+    if (!entries.length) {
+      el.innerHTML = "<div class='lb-empty'>No scores yet today — be the first!</div>";
+      return;
+    }
+    const medals = ["🥇", "🥈", "🥉"];
+    let rank = 0, prevScore = null;
+    entries.forEach((e, i) => {
+      if (e.score !== prevScore) { rank = i + 1; prevScore = e.score; }
+      const row = document.createElement("div");
+      row.className = "lb-row" +
+        (highlight && e.name.toLowerCase() === highlight.toLowerCase() ? " me" : "");
+      const badge = rank <= 3 ? medals[rank - 1] : rank + ".";
+      row.innerHTML =
+        `<span class="lb-rank">${badge}</span>` +
+        `<span class="lb-name"></span>` +
+        `<span class="lb-score">${e.score}/${e.total}</span>`;
+      row.querySelector(".lb-name").textContent = e.name;
+      el.appendChild(row);
+    });
+  }
+
+  // Submit the finished daily game (if named), then show today's standings.
+  function updateResultsLeaderboard() {
+    const section = $("results-lb");
+    const list = $("results-lb-list");
+    if (state.mode !== "daily") { section.classList.add("hidden"); return; }
+    section.classList.remove("hidden");
+    list.innerHTML = "<div class='lb-empty'>Loading…</div>";
+    const seed = state.seed;
+    const post = playerName()
+      ? submitScore()
+      : fetchScores(seed).then((b) => {
+          $("lb-no-name").classList.remove("hidden");
+          return b;
+        });
+    post
+      .then((b) => renderLbList(list, b.entries, playerName()))
+      .catch(() => {
+        list.innerHTML = "<div class='lb-empty'>Leaderboard unavailable right now.</div>";
+      });
+  }
+
+  function openLeaderboard() {
+    const seed = todaySeed();
+    $("lb-date").textContent = "Daily game · " + seed;
+    const list = $("lb-list");
+    list.innerHTML = "<div class='lb-empty'>Loading…</div>";
+    $("lb-modal").classList.remove("hidden");
+    fetchScores(seed)
+      .then((b) => renderLbList(list, b.entries, playerName()))
+      .catch(() => {
+        list.innerHTML = "<div class='lb-empty'>Leaderboard unavailable right now.</div>";
+      });
+  }
+
   /* ---------- results ---------- */
   function emojiGrid() {
     let grid = "";
@@ -489,7 +574,9 @@
     $("clue-modal").classList.add("hidden");
     $("results-score").textContent = `${score()} / ${COLS * ROWS}`;
     $("results-grid").textContent = emojiGrid();
+    $("lb-no-name").classList.add("hidden");
     $("results-modal").classList.remove("hidden");
+    updateResultsLeaderboard();
   }
 
   function copyResults() {
@@ -535,5 +622,7 @@
     });
     $("copy-results").addEventListener("click", copyResults);
     $("back-to-menu").addEventListener("click", backToMenu);
+    $("show-lb").addEventListener("click", openLeaderboard);
+    $("lb-close").addEventListener("click", () => $("lb-modal").classList.add("hidden"));
   });
 })();

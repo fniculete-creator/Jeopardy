@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily Sports Jeopardy leaderboard server
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/jeopardy-lb
+ExecStart=/usr/bin/python3 /home/ubuntu/jeopardy-lb/server.py --port 8124 --db /home/ubuntu/jeopardy-lb/jeopardy-lb.db
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

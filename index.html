@@ -28,6 +28,7 @@
     <div class="setup-actions">
       <button id="start-daily" class="btn primary big">Play today's game</button>
       <button id="start-random" class="btn big">Play a random game</button>
+      <button id="show-lb" class="btn big">Today's leaderboard</button>
     </div>
     <p id="resume-note" class="hidden">A game in progress was found &mdash; starting will resume it.</p>
   </div>
@@ -99,9 +100,26 @@
     <div class="clue-cat">GAME OVER</div>
     <div id="results-score" class="results-score"></div>
     <div id="results-grid" class="results-grid"></div>
+    <div id="results-lb" class="lb-section hidden">
+      <div class="lb-title">Today's leaderboard</div>
+      <p id="lb-no-name" class="mic-note hidden">Enter a name on the start screen to appear on the leaderboard.</p>
+      <div id="results-lb-list" class="lb-list"></div>
+    </div>
     <div class="setup-actions">
       <button id="copy-results" class="btn primary">Copy results to share</button>
       <button id="back-to-menu" class="btn">Back to menu</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Leaderboard modal ===== -->
+<div id="lb-modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="clue-cat">TODAY'S LEADERBOARD</div>
+    <div id="lb-date" class="lb-date"></div>
+    <div id="lb-list" class="lb-list"></div>
+    <div class="setup-actions">
+      <button id="lb-close" class="btn primary big">Close</button>
     </div>
   </div>
 </div>
