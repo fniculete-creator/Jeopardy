@@ -1,20 +1,37 @@
-/* Daily Jeopardy! — plays real clues from past Jeopardy! episodes.
-   Data comes from clues.js (window.JEOPARDY_DATA), generated from the
-   J! Archive-based dataset. Board selection is seeded by the calendar
-   date so everyone gets the same board on the same day. */
+/* Daily Sports Jeopardy! — a short, phone-first solo game built on real
+   sports clues from past Jeopardy! episodes (data in clues.js).
+
+   One round, no wagering: every clue is worth 1 point and wrong guesses
+   cost nothing. Tap the screen to buzz in, then answer by voice — the
+   Web Speech API transcribes and the answer is auto-checked, with a
+   self-judged fallback for browsers without speech recognition.
+
+   The board is seeded by the calendar date, so everyone who plays the
+   daily game gets the same clues and can compare scores. */
 
 (function () {
   "use strict";
 
   const DATA = window.JEOPARDY_DATA;
   const STORAGE_GAME = "daily-jeopardy-game";
-  const STORAGE_PLAYERS = "daily-jeopardy-players";
+  const STORAGE_NAME = "daily-jeopardy-name";
+  const STORAGE_MIC = "daily-jeopardy-mic";
   const COLS = 6, ROWS = 5;
-  const J_VALUES = [200, 400, 600, 800, 1000];
-  const DJ_VALUES = [400, 800, 1200, 1600, 2000];
+  const VALUES = [200, 400, 600, 800, 1000]; // display only; every clue = 1 pt
+  const BUZZ_SECONDS = 12;   // time to buzz in after the clue appears
+  const LISTEN_SECONDS = 8;  // time to speak an answer after buzzing
 
-  let state = null; // current game state
-  let activeClue = null; // {row, col, value, clue, answer, isDD, wager, ddPlayer}
+  // One big deck of sports categories; each category's five clues stay
+  // in easy-to-hard order.
+  const POOL = DATA.cats;
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+
+  let state = null;       // persistent game state
+  let active = null;      // {row, col, answer, judged}
+  let buzzTimer = null;   // interval for the buzz countdown
+  let listenTimer = null; // timeout for the listening window
+  let recognizer = null;
 
   /* ---------- seeded RNG ---------- */
   function xmur3(str) {
@@ -37,9 +54,7 @@
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
   }
-  function makeRng(seedStr) {
-    return mulberry32(xmur3(seedStr)());
-  }
+  function makeRng(seedStr) { return mulberry32(xmur3(seedStr)()); }
 
   function pickDistinct(rng, count, max) {
     const picked = new Set();
@@ -47,41 +62,24 @@
     return [...picked];
   }
 
-  /* ---------- game creation ---------- */
+  /* ---------- game state ---------- */
   function todaySeed() {
-    // local calendar date, e.g. "2026-07-10"
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
   }
 
-  function buildGame(seed, mode, playerNames) {
+  function buildGame(seed, mode) {
     const rng = makeRng("jeopardy:" + seed);
-    const jCats = pickDistinct(rng, COLS, DATA.j.length);
-    const djCats = pickDistinct(rng, COLS, DATA.dj.length);
-    const fj = Math.floor(rng() * DATA.fj.length);
-
-    // Daily doubles: never in the top row, like the real show.
-    const dd1 = [[Math.floor(rng() * COLS), 1 + Math.floor(rng() * (ROWS - 1))]];
-    const colA = Math.floor(rng() * COLS);
-    let colB = Math.floor(rng() * (COLS - 1));
-    if (colB >= colA) colB++;
-    const dd2 = [
-      [colA, 1 + Math.floor(rng() * (ROWS - 1))],
-      [colB, 1 + Math.floor(rng() * (ROWS - 1))],
-    ];
-
     return {
       seed, mode,
-      players: playerNames.map((n) => ({ name: n, score: 0 })),
-      round: 1,
-      jCats, djCats, fj, dd1, dd2,
-      used: { 1: Array(COLS * ROWS).fill(false), 2: Array(COLS * ROWS).fill(false) },
-      finalDone: false,
+      cats: pickDistinct(rng, COLS, POOL.length),
+      // per-cell result: null = unplayed, 1 = right, 0 = wrong/passed
+      results: Array(COLS * ROWS).fill(null),
+      done: false,
     };
   }
 
-  /* ---------- persistence ---------- */
   function save() {
     try { localStorage.setItem(STORAGE_GAME, JSON.stringify(state)); } catch (e) {}
   }
@@ -94,381 +92,349 @@
 
   /* ---------- helpers ---------- */
   const $ = (id) => document.getElementById(id);
-  function money(n) {
-    const sign = n < 0 ? "-" : "";
-    return sign + "$" + Math.abs(n).toLocaleString("en-US");
+  function score() { return state.results.filter((r) => r === 1).length; }
+  function played() { return state.results.filter((r) => r !== null).length; }
+  function micEnabled() { return !!SR && $("mic-toggle").checked; }
+
+  /* ---------- answer matching ---------- */
+  function normalize(s) {
+    s = s.toLowerCase();
+    s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    s = s.replace(/&/g, " and ");
+    s = s.replace(/[^a-z0-9\s]/g, " ");
+    // strip a "what is / who are ..." style prefix if the player phrased it
+    s = s.replace(/^\s*(what|who|where|when)\s+(is|are|was|were)\s+/, "");
+    s = s.replace(/\s+/g, " ").trim();
+    s = s.replace(/^(the|a|an) /, "");
+    return s;
   }
-  function roundCats() { return state.round === 1 ? state.jCats : state.djCats; }
-  function roundData() { return state.round === 1 ? DATA.j : DATA.dj; }
-  function roundValues() { return state.round === 1 ? J_VALUES : DJ_VALUES; }
-  function roundDDs() { return state.round === 1 ? state.dd1 : state.dd2; }
+
+  // Acceptable variants of the official answer, e.g.
+  // "(Queen) Victoria" -> ["queen victoria", "victoria"]
+  // "a llama or an alpaca" -> both animals accepted
+  function answerVariants(answer) {
+    const raw = new Set();
+    raw.add(answer);
+    raw.add(answer.replace(/\(.*?\)/g, " "));            // parens optional
+    raw.add(answer.replace(/[()]/g, " "));               // parens included
+    for (const part of answer.replace(/\(.*?\)/g, " ").split(/\bor\b|\//i)) raw.add(part);
+    const m = answer.match(/\(accept:?\s*([^)]+)\)/i);   // "(accept ...)" notes
+    if (m) raw.add(m[1]);
+    const out = new Set();
+    for (const v of raw) {
+      const n = normalize(v);
+      if (n) out.add(n);
+    }
+    return [...out];
+  }
+
+  function levenshtein(a, b) {
+    if (a === b) return 0;
+    const m = a.length, n = b.length;
+    if (!m) return n;
+    if (!n) return m;
+    let prev = Array.from({ length: n + 1 }, (_, i) => i);
+    for (let i = 1; i <= m; i++) {
+      const cur = [i];
+      for (let j = 1; j <= n; j++) {
+        cur[j] = Math.min(
+          prev[j] + 1,
+          cur[j - 1] + 1,
+          prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+        );
+      }
+      prev = cur;
+    }
+    return prev[n];
+  }
+
+  function similar(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const dist = levenshtein(a, b);
+    const ratio = 1 - dist / Math.max(a.length, b.length);
+    if (ratio >= 0.8) return true;
+    // guess contains the full answer (or vice versa) as a word boundary match
+    if (a.length >= 4 && b.includes(a)) return true;
+    if (b.length >= 4 && a.includes(b)) return true;
+    return false;
+  }
+
+  function isCorrect(saidAlternatives, answer) {
+    const variants = answerVariants(answer);
+    for (const said of saidAlternatives) {
+      const guess = normalize(said);
+      for (const v of variants) if (similar(guess, v)) return true;
+    }
+    return false;
+  }
 
   /* ---------- setup screen ---------- */
   function initSetup() {
-    const wrap = $("player-inputs");
-    wrap.innerHTML = "";
-    let names = ["Player 1", "Player 2"];
-    try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_PLAYERS));
-      if (Array.isArray(saved) && saved.length) names = saved;
-    } catch (e) {}
-    names.forEach((n) => addPlayerInput(n));
-
-    const saved = loadSaved();
-    if (saved && !(saved.round > 3)) {
-      $("resume-note").classList.remove("hidden");
+    try { $("player-name").value = localStorage.getItem(STORAGE_NAME) || ""; } catch (e) {}
+    if (!SR) {
+      $("mic-row").classList.add("hidden");
+      $("mic-unsupported").classList.remove("hidden");
+    } else {
+      try { $("mic-toggle").checked = localStorage.getItem(STORAGE_MIC) !== "off"; } catch (e) {}
     }
-  }
-
-  function addPlayerInput(value) {
-    const wrap = $("player-inputs");
-    if (wrap.children.length >= 6) return;
-    const input = document.createElement("input");
-    input.type = "text";
-    input.maxLength = 20;
-    input.placeholder = "Player name";
-    input.value = value || "";
-    wrap.appendChild(input);
-  }
-
-  function readPlayerNames() {
-    const names = [...$("player-inputs").querySelectorAll("input")]
-      .map((i) => i.value.trim())
-      .filter(Boolean);
-    return names.length ? names : ["Player 1"];
+    const saved = loadSaved();
+    $("resume-note").classList.toggle("hidden", !(saved && !saved.done));
   }
 
   function startGame(mode) {
-    const names = readPlayerNames();
-    try { localStorage.setItem(STORAGE_PLAYERS, JSON.stringify(names)); } catch (e) {}
+    try {
+      localStorage.setItem(STORAGE_NAME, $("player-name").value.trim());
+      localStorage.setItem(STORAGE_MIC, $("mic-toggle").checked ? "on" : "off");
+    } catch (e) {}
 
     const seed = mode === "daily"
       ? todaySeed()
       : "random-" + Math.random().toString(36).slice(2, 10);
 
     const saved = loadSaved();
-    if (saved && saved.mode === "daily" && mode === "daily" && saved.seed === seed && !(saved.round > 3)) {
-      state = saved; // resume today's game in progress
+    if (saved && !saved.done && saved.mode === mode &&
+        (mode !== "daily" || saved.seed === seed)) {
+      state = saved; // resume in-progress game (today's daily, or last random)
     } else {
-      state = buildGame(seed, mode, names);
+      state = buildGame(seed, mode);
       save();
     }
     $("setup-screen").classList.add("hidden");
     $("game-screen").classList.remove("hidden");
-    if (state.round === 3) startFinal();
-    else renderAll();
+    renderAll();
   }
 
-  /* ---------- board rendering ---------- */
+  /* ---------- board ---------- */
   function renderAll() {
-    $("round-title").textContent = state.round === 1 ? "JEOPARDY!" : "DOUBLE JEOPARDY!";
     $("game-date").textContent = state.mode === "daily"
       ? "Daily game · " + state.seed
       : "Random game";
     renderBoard();
-    renderScores();
+    renderScore();
+  }
+
+  function renderScore() {
+    $("score-chip").textContent = `${score()} / ${played()} pts`;
   }
 
   function renderBoard() {
     const board = $("board");
     board.innerHTML = "";
-    const cats = roundCats();
-    const data = roundData();
-    const values = roundValues();
-
     for (let c = 0; c < COLS; c++) {
       const cell = document.createElement("div");
       cell.className = "cell category";
-      cell.textContent = data[cats[c]].c;
+      cell.textContent = POOL[state.cats[c]].c;
       board.appendChild(cell);
     }
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const cell = document.createElement("div");
-        const idx = r * COLS + c;
-        if (state.used[state.round][idx]) {
-          cell.className = "cell done";
-        } else {
+        const res = state.results[r * COLS + c];
+        if (res === null) {
           cell.className = "cell value";
-          cell.textContent = "$" + values[r];
+          cell.textContent = "$" + VALUES[r];
           cell.addEventListener("click", () => openClue(r, c));
+        } else {
+          cell.className = "cell done " + (res === 1 ? "won" : "lost");
+          cell.textContent = res === 1 ? "✓" : "✗";
         }
         board.appendChild(cell);
       }
     }
   }
 
-  function renderScores() {
-    const sb = $("scoreboard");
-    sb.innerHTML = "";
-    state.players.forEach((p, i) => {
-      const pod = document.createElement("div");
-      pod.className = "podium";
-      const name = document.createElement("div");
-      name.className = "pname";
-      name.textContent = p.name;
-      const score = document.createElement("div");
-      score.className = "pscore" + (p.score < 0 ? " negative" : "");
-      score.textContent = money(p.score);
-      score.title = "Click to edit score";
-      score.addEventListener("click", () => {
-        const val = prompt(`Set score for ${p.name}:`, p.score);
-        if (val === null) return;
-        const n = parseInt(val.replace(/[^\-0-9]/g, ""), 10);
-        if (!isNaN(n)) { p.score = n; save(); renderScores(); }
-      });
-      const hint = document.createElement("div");
-      hint.className = "edit-hint";
-      hint.textContent = "tap to edit";
-      pod.appendChild(name); pod.appendChild(score); pod.appendChild(hint);
-      sb.appendChild(pod);
-    });
-  }
-
   /* ---------- clue flow ---------- */
-  function openClue(row, col) {
-    const cats = roundCats();
-    const data = roundData();
-    const cat = data[cats[col]];
-    const [clueText, answerText] = cat.cl[row];
-    const value = roundValues()[row];
-    const isDD = roundDDs().some(([c, r]) => c === col && r === row);
-
-    activeClue = { row, col, value, clue: clueText, answer: answerText, isDD, wager: 0, ddPlayer: 0 };
-
-    $("clue-category").textContent = cat.c + " — $" + value.toLocaleString("en-US");
-    $("clue-source").textContent = "Real Jeopardy! clue · originally aired " + cat.d;
-    $("answer-area").classList.add("hidden");
-    $("reveal-answer").classList.remove("hidden");
-
-    if (isDD) {
-      $("clue-body").classList.add("hidden");
-      $("dd-banner").classList.remove("hidden");
-      const sel = $("dd-player");
-      sel.innerHTML = "";
-      state.players.forEach((p, i) => {
-        const opt = document.createElement("option");
-        opt.value = i;
-        opt.textContent = p.name;
-        sel.appendChild(opt);
-      });
-      const maxDefault = state.round === 1 ? 1000 : 2000;
-      $("dd-wager").value = Math.max(state.players[0].score, maxDefault);
-      sel.onchange = () => {
-        const p = state.players[+sel.value];
-        $("dd-wager").value = Math.max(p.score, maxDefault);
-      };
-    } else {
-      $("dd-banner").classList.add("hidden");
-      showClueBody();
+  function showState(name) {
+    for (const s of ["state-buzz", "state-listen", "state-say", "state-verdict"]) {
+      $(s).classList.toggle("hidden", s !== name);
     }
+  }
+
+  function openClue(row, col) {
+    const cat = POOL[state.cats[col]];
+    const [clueText, answerText] = cat.cl[row];
+    active = { row, col, answer: answerText, judged: null };
+
+    $("clue-category").textContent = cat.c;
+    $("clue-text").textContent = clueText;
+    $("clue-source").textContent = "Real Jeopardy! clue · originally aired " + cat.d;
+    $("heard-line").classList.add("hidden");
+    $("override-row").classList.add("hidden");
+    $("self-judge").classList.add("hidden");
+    $("next-btn").classList.add("hidden");
+    showState("state-buzz");
     $("clue-modal").classList.remove("hidden");
+    startBuzzCountdown();
   }
 
-  function showClueBody() {
-    $("clue-text").textContent = activeClue.clue;
-    $("clue-body").classList.remove("hidden");
+  function startBuzzCountdown() {
+    const fill = $("buzz-timer");
+    const start = performance.now();
+    fill.style.width = "100%";
+    stopBuzzCountdown();
+    buzzTimer = setInterval(() => {
+      const left = 1 - (performance.now() - start) / (BUZZ_SECONDS * 1000);
+      fill.style.width = Math.max(0, left * 100) + "%";
+      if (left <= 0) {
+        stopBuzzCountdown();
+        settle(0, null, "⏰ Time! No buzz.");
+      }
+    }, 100);
   }
 
-  function ddStart() {
-    const playerIdx = +$("dd-player").value;
-    const player = state.players[playerIdx];
-    const maxWager = Math.max(player.score, state.round === 1 ? 1000 : 2000);
-    let wager = parseInt($("dd-wager").value, 10);
-    if (isNaN(wager) || wager < 5) wager = 5;
-    if (wager > maxWager) wager = maxWager;
-    activeClue.wager = wager;
-    activeClue.ddPlayer = playerIdx;
-    $("dd-banner").classList.add("hidden");
-    $("clue-category").textContent =
-      roundData()[roundCats()[activeClue.col]].c + " — DAILY DOUBLE, " + money(wager);
-    showClueBody();
+  function stopBuzzCountdown() {
+    if (buzzTimer) { clearInterval(buzzTimer); buzzTimer = null; }
   }
 
-  function revealAnswer() {
-    $("answer-text").textContent = activeClue.answer;
-    $("reveal-answer").classList.add("hidden");
-    $("answer-area").classList.remove("hidden");
-    buildJudgeButtons();
+  function buzz() {
+    stopBuzzCountdown();
+    if (micEnabled()) startListening();
+    else showState("state-say");
   }
 
-  function buildJudgeButtons() {
-    const wrap = $("judge-buttons");
-    wrap.innerHTML = "";
-    const judgeable = activeClue.isDD
-      ? [activeClue.ddPlayer]
-      : state.players.map((_, i) => i);
-    const amount = activeClue.isDD ? activeClue.wager : activeClue.value;
+  function startListening() {
+    showState("state-listen");
+    $("live-transcript").textContent = " ";
 
-    judgeable.forEach((i) => {
-      const p = state.players[i];
-      const pair = document.createElement("div");
-      pair.className = "judge-pair";
-      const who = document.createElement("div");
-      who.className = "who";
-      who.textContent = p.name;
-      const row = document.createElement("div");
-      row.className = "row";
-      const right = document.createElement("button");
-      right.className = "btn right";
-      right.textContent = "✓ +" + money(amount).replace("$", "$");
-      const wrong = document.createElement("button");
-      wrong.className = "btn wrong";
-      wrong.textContent = "✗ -" + money(amount).replace("$", "$");
-      right.addEventListener("click", () => {
-        p.score += amount;
-        right.classList.add("used"); wrong.classList.add("used");
-        save(); renderScores();
-      });
-      wrong.addEventListener("click", () => {
-        p.score -= amount;
-        right.classList.add("used"); wrong.classList.add("used");
-        save(); renderScores();
-      });
-      row.appendChild(right); row.appendChild(wrong);
-      pair.appendChild(who); pair.appendChild(row);
-      wrap.appendChild(pair);
-    });
+    let finalAlternatives = [];
+    let interim = "";
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (listenTimer) { clearTimeout(listenTimer); listenTimer = null; }
+      try { recognizer && recognizer.abort(); } catch (e) {}
+      recognizer = null;
+      const said = finalAlternatives.length ? finalAlternatives : (interim ? [interim] : []);
+      if (!said.length) {
+        // heard nothing — let the player judge themselves
+        showState("state-say");
+        return;
+      }
+      const right = isCorrect(said, active.answer) ? 1 : 0;
+      settle(right, said[0], null);
+    };
+
+    try {
+      recognizer = new SR();
+      recognizer.lang = "en-US";
+      recognizer.interimResults = true;
+      recognizer.maxAlternatives = 5;
+      recognizer.onresult = (ev) => {
+        interim = "";
+        for (let i = 0; i < ev.results.length; i++) {
+          const result = ev.results[i];
+          if (result.isFinal) {
+            for (let k = 0; k < result.length; k++) finalAlternatives.push(result[k].transcript);
+          } else {
+            interim += result[0].transcript;
+          }
+        }
+        $("live-transcript").textContent = (finalAlternatives[0] || interim || " ");
+        if (finalAlternatives.length) finish();
+      };
+      recognizer.onerror = () => finish();
+      recognizer.onend = () => finish();
+      recognizer.start();
+      listenTimer = setTimeout(finish, LISTEN_SECONDS * 1000);
+    } catch (e) {
+      showState("state-say"); // mic failed — fall back to self-judging
+    }
   }
 
-  function closeClue() {
-    state.used[state.round][activeClue.row * COLS + activeClue.col] = true;
-    activeClue = null;
-    $("clue-modal").classList.add("hidden");
+  // Record a result and show the verdict screen.
+  // heard: transcript (voice mode) or null; note: replaces the verdict text.
+  function settle(right, heard, note) {
+    active.judged = right;
+    state.results[active.row * COLS + active.col] = right;
     save();
-    if (state.used[state.round].every(Boolean)) nextRound();
+    renderScore();
+
+    showState("state-verdict");
+    const banner = $("verdict-banner");
+    banner.textContent = note || (right ? "✅ Correct! +1 point" : "❌ Not quite.");
+    banner.className = "verdict " + (right ? "good" : "bad");
+    if (heard) {
+      $("heard-line").textContent = `You said: “${heard}”`;
+      $("heard-line").classList.remove("hidden");
+      const ov = $("override-btn");
+      ov.textContent = right ? "It got it wrong — I was incorrect" : "It misheard me — I was right";
+      $("override-row").classList.remove("hidden");
+    }
+    $("answer-text").textContent = active.answer;
+    $("next-btn").classList.remove("hidden");
+  }
+
+  // Self-judged reveal (no mic, mic failure, pass, or silence).
+  function revealSelfJudge() {
+    showState("state-verdict");
+    $("verdict-banner").textContent = "Were you right?";
+    $("verdict-banner").className = "verdict";
+    $("answer-text").textContent = active.answer;
+    $("self-judge").classList.remove("hidden");
+  }
+
+  function selfJudge(right) {
+    $("self-judge").classList.add("hidden");
+    settle(right, null, right ? "✅ Correct! +1 point" : "❌ Not quite.");
+  }
+
+  function overrideVerdict() {
+    const flipped = active.judged === 1 ? 0 : 1;
+    active.judged = flipped;
+    state.results[active.row * COLS + active.col] = flipped;
+    save();
+    renderScore();
+    const banner = $("verdict-banner");
+    banner.textContent = flipped ? "✅ Fixed — +1 point" : "Okay — no point";
+    banner.className = "verdict " + (flipped ? "good" : "bad");
+    $("override-row").classList.add("hidden");
+  }
+
+  function pass() {
+    stopBuzzCountdown();
+    settle(0, null, "Passed — here's the answer:");
+  }
+
+  function nextClue() {
+    active = null;
+    $("clue-modal").classList.add("hidden");
+    if (state.results.every((r) => r !== null)) showResults();
     else renderBoard();
   }
 
-  function nextRound() {
-    if (state.round === 1) {
-      state.round = 2;
-      save();
-      renderAll();
-    } else if (state.round === 2) {
-      state.round = 3;
-      save();
-      startFinal();
+  /* ---------- results ---------- */
+  function emojiGrid() {
+    let grid = "";
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const res = state.results[r * COLS + c];
+        grid += res === 1 ? "🟩" : res === 0 ? "🟥" : "⬜";
+      }
+      grid += "\n";
     }
-  }
-
-  /* ---------- final jeopardy ---------- */
-  function startFinal() {
-    $("round-title").textContent = "FINAL JEOPARDY!";
-    $("board").innerHTML = "";
-    renderScores();
-    const fj = DATA.fj[state.fj];
-    $("final-category").textContent = fj.c;
-    $("final-source").textContent = "Real Final Jeopardy! clue · originally aired " + fj.d;
-    $("final-clue-area").classList.add("hidden");
-    $("final-answer-area").classList.add("hidden");
-    $("final-show-clue").classList.remove("hidden");
-
-    const wagers = $("final-wagers");
-    wagers.innerHTML = "";
-    state.players.forEach((p, i) => {
-      const label = document.createElement("label");
-      const span = document.createElement("span");
-      span.textContent = `${p.name} (${money(p.score)}) wagers $`;
-      const input = document.createElement("input");
-      input.type = "number";
-      input.min = 0;
-      input.step = 100;
-      input.dataset.player = i;
-      input.value = Math.max(p.score, 0);
-      label.appendChild(span); label.appendChild(input);
-      wagers.appendChild(label);
-    });
-    $("final-modal").classList.remove("hidden");
-  }
-
-  function finalShowClue() {
-    const fj = DATA.fj[state.fj];
-    state.finalWagers = [...$("final-wagers").querySelectorAll("input")].map((input, i) => {
-      const p = state.players[i];
-      const maxWager = Math.max(p.score, 1000);
-      let w = parseInt(input.value, 10);
-      if (isNaN(w) || w < 0) w = 0;
-      if (w > maxWager) w = maxWager;
-      input.value = w;
-      input.disabled = true;
-      return w;
-    });
-    save();
-    $("final-show-clue").classList.add("hidden");
-    $("final-clue-text").textContent = fj.q;
-    $("final-clue-area").classList.remove("hidden");
-  }
-
-  function finalReveal() {
-    const fj = DATA.fj[state.fj];
-    $("final-answer-text").textContent = fj.a;
-    $("final-reveal").classList.add("hidden");
-    $("final-answer-area").classList.remove("hidden");
-
-    const wrap = $("final-judge");
-    wrap.innerHTML = "";
-    state.players.forEach((p, i) => {
-      const pair = document.createElement("div");
-      pair.className = "judge-pair";
-      const who = document.createElement("div");
-      who.className = "who";
-      who.textContent = `${p.name} (wagered ${money(state.finalWagers[i])})`;
-      const row = document.createElement("div");
-      row.className = "row";
-      const right = document.createElement("button");
-      right.className = "btn right";
-      right.textContent = "✓ Right";
-      const wrong = document.createElement("button");
-      wrong.className = "btn wrong";
-      wrong.textContent = "✗ Wrong";
-      right.addEventListener("click", () => {
-        p.score += state.finalWagers[i];
-        right.classList.add("used"); wrong.classList.add("used");
-        save(); renderScores();
-      });
-      wrong.addEventListener("click", () => {
-        p.score -= state.finalWagers[i];
-        right.classList.add("used"); wrong.classList.add("used");
-        save(); renderScores();
-      });
-      row.appendChild(right); row.appendChild(wrong);
-      pair.appendChild(who); pair.appendChild(row);
-      wrap.appendChild(pair);
-    });
+    return grid.trimEnd();
   }
 
   function showResults() {
-    $("final-modal").classList.add("hidden");
-    state.round = 4;
+    state.done = true;
     save();
-    const list = $("results-list");
-    list.innerHTML = "";
-    const ranked = state.players
-      .map((p) => ({ ...p }))
-      .sort((a, b) => b.score - a.score);
-    const medals = ["\u{1F947}", "\u{1F948}", "\u{1F949}"];
-    ranked.forEach((p, i) => {
-      const row = document.createElement("div");
-      row.className = "result-row";
-      const medal = document.createElement("span");
-      medal.className = "medal";
-      medal.textContent = medals[i] || "•";
-      row.appendChild(medal);
-      row.appendChild(document.createTextNode(`${p.name} — ${money(p.score)}`));
-      list.appendChild(row);
-    });
+    $("game-screen").classList.add("hidden");
+    $("clue-modal").classList.add("hidden");
+    $("results-score").textContent = `${score()} / ${COLS * ROWS}`;
+    $("results-grid").textContent = emojiGrid();
     $("results-modal").classList.remove("hidden");
   }
 
   function copyResults() {
-    const ranked = [...state.players].sort((a, b) => b.score - a.score);
-    const medals = ["\u{1F947}", "\u{1F948}", "\u{1F949}"];
+    const name = ($("player-name").value || "").trim();
     const title = state.mode === "daily"
-      ? `Daily Jeopardy! ${state.seed}`
-      : "Jeopardy! game night";
-    const lines = [title, ...ranked.map((p, i) => `${medals[i] || "•"} ${p.name} — ${money(p.score)}`)];
-    const text = lines.join("\n");
+      ? `Daily Sports Jeopardy! ${state.seed}`
+      : "Sports Jeopardy! (random game)";
+    const who = name ? ` — ${name}` : "";
+    const text = `${title}${who}\n${score()}/${COLS * ROWS}\n${emojiGrid()}`;
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(() => {
         $("copy-results").textContent = "Copied!";
@@ -491,24 +457,18 @@
   /* ---------- wire up ---------- */
   document.addEventListener("DOMContentLoaded", () => {
     initSetup();
-    $("add-player").addEventListener("click", () => addPlayerInput(""));
     $("start-daily").addEventListener("click", () => startGame("daily"));
     $("start-random").addEventListener("click", () => startGame("random"));
-    $("dd-go").addEventListener("click", ddStart);
-    $("reveal-answer").addEventListener("click", revealAnswer);
-    $("nobody-btn").addEventListener("click", closeClue);
-    $("skip-round").addEventListener("click", () => {
-      if (state.round < 3 && confirm("Skip to the next round?")) nextRound();
-    });
+    $("buzz-btn").addEventListener("click", buzz);
+    $("pass-btn").addEventListener("click", pass);
+    $("reveal-btn").addEventListener("click", revealSelfJudge);
+    $("self-right").addEventListener("click", () => selfJudge(1));
+    $("self-wrong").addEventListener("click", () => selfJudge(0));
+    $("override-btn").addEventListener("click", overrideVerdict);
+    $("next-btn").addEventListener("click", nextClue);
     $("quit-game").addEventListener("click", () => {
-      if (confirm("End this game and go to final scores?")) {
-        if (state.round === 3) $("final-modal").classList.add("hidden");
-        showResults();
-      }
+      if (confirm("End this game and see your results?")) showResults();
     });
-    $("final-show-clue").addEventListener("click", finalShowClue);
-    $("final-reveal").addEventListener("click", finalReveal);
-    $("final-done").addEventListener("click", showResults);
     $("copy-results").addEventListener("click", copyResults);
     $("back-to-menu").addEventListener("click", backToMenu);
   });

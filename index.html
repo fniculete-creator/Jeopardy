@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Daily Jeopardy!</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Daily Sports Jeopardy!</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='15' fill='%23060ce9'/%3E%3Ctext x='50' y='72' font-size='64' text-anchor='middle' fill='%23ffcc00' font-family='Georgia' font-weight='bold'%3EJ!%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -11,12 +11,16 @@
 
 <!-- ===== Setup screen ===== -->
 <div id="setup-screen" class="screen">
-  <h1 class="logo">DAILY&nbsp;JEOPARDY!</h1>
-  <p class="tagline">Real clues from past Jeopardy! episodes &mdash; same board for everyone, every day.</p>
+  <h1 class="logo">SPORTS&nbsp;JEOPARDY!</h1>
+  <p class="tagline">Real sports clues from past Jeopardy! episodes. Same board for everyone, every day &mdash; tap to buzz in, answer out loud, 1 point per clue.</p>
   <div class="setup-card">
-    <h2>Who's playing?</h2>
-    <div id="player-inputs"></div>
-    <button id="add-player" class="btn small">+ Add player</button>
+    <label class="field-label" for="player-name">Your name</label>
+    <input id="player-name" type="text" maxlength="20" placeholder="Your name">
+    <label id="mic-row" class="mic-row">
+      <input id="mic-toggle" type="checkbox" checked>
+      Answer by voice (uses your microphone)
+    </label>
+    <p id="mic-unsupported" class="mic-note hidden">Voice answers aren't supported in this browser &mdash; you'll answer out loud and judge yourself.</p>
     <div class="setup-actions">
       <button id="start-daily" class="btn primary big">Play today's game</button>
       <button id="start-random" class="btn big">Play a random game</button>
@@ -28,71 +32,68 @@
 <!-- ===== Game screen ===== -->
 <div id="game-screen" class="screen hidden">
   <header id="game-header">
-    <span id="round-title">JEOPARDY!</span>
+    <span id="round-title">SPORTS JEOPARDY!</span>
     <span id="game-date"></span>
     <span class="header-actions">
-      <button id="skip-round" class="btn small">Next round &raquo;</button>
+      <span id="score-chip">0 pts</span>
       <button id="quit-game" class="btn small danger">End game</button>
     </span>
   </header>
   <div id="board"></div>
-  <div id="scoreboard"></div>
+  <p class="board-hint">Every clue is worth 1 point. Wrong guesses cost nothing &mdash; so guess!</p>
 </div>
 
 <!-- ===== Clue modal ===== -->
 <div id="clue-modal" class="modal hidden">
   <div class="modal-box">
     <div id="clue-category" class="clue-cat"></div>
-    <div id="dd-banner" class="hidden">
-      <div class="dd-title">DAILY&nbsp;DOUBLE!</div>
-      <div class="dd-controls">
-        <label>Who found it? <select id="dd-player"></select></label>
-        <label>Wager $<input id="dd-wager" type="number" min="5" step="5"></label>
-        <button id="dd-go" class="btn primary">Show clue</button>
-      </div>
-    </div>
-    <div id="clue-body" class="hidden">
-      <div id="clue-text" class="clue-text"></div>
-      <button id="reveal-answer" class="btn primary">Show answer</button>
-      <div id="answer-area" class="hidden">
-        <div id="answer-text" class="answer-text"></div>
-        <div id="judge-area">
-          <div class="judge-hint">Who got it? (tap name to score)</div>
-          <div id="judge-buttons"></div>
-          <button id="nobody-btn" class="btn">Nobody / close</button>
-        </div>
-      </div>
-    </div>
-    <div id="clue-source" class="clue-source"></div>
-  </div>
-</div>
+    <div id="clue-text" class="clue-text"></div>
 
-<!-- ===== Final Jeopardy modal ===== -->
-<div id="final-modal" class="modal hidden">
-  <div class="modal-box">
-    <div class="clue-cat">FINAL JEOPARDY!</div>
-    <div id="final-category" class="final-cat"></div>
-    <div id="final-wagers"></div>
-    <button id="final-show-clue" class="btn primary">Lock wagers &amp; show clue</button>
-    <div id="final-clue-area" class="hidden">
-      <div id="final-clue-text" class="clue-text"></div>
-      <button id="final-reveal" class="btn primary">Show answer</button>
-      <div id="final-answer-area" class="hidden">
-        <div id="final-answer-text" class="answer-text"></div>
-        <div class="judge-hint">Mark each player right or wrong:</div>
-        <div id="final-judge"></div>
-        <button id="final-done" class="btn primary">Final scores</button>
-      </div>
+    <!-- state: read + buzz -->
+    <div id="state-buzz">
+      <div class="timer-track"><div id="buzz-timer" class="timer-fill"></div></div>
+      <button id="buzz-btn" class="buzz-btn">TAP TO<br>BUZZ IN</button>
+      <button id="pass-btn" class="btn small ghost">Pass (reveal answer)</button>
     </div>
-    <div id="final-source" class="clue-source"></div>
+
+    <!-- state: listening -->
+    <div id="state-listen" class="hidden">
+      <div class="listening"><span class="mic-dot"></span> Listening&hellip; say your answer!</div>
+      <div id="live-transcript" class="live-transcript">&nbsp;</div>
+    </div>
+
+    <!-- state: say aloud (no-mic fallback) -->
+    <div id="state-say" class="hidden">
+      <div class="listening">Say your answer out loud&hellip;</div>
+      <button id="reveal-btn" class="btn primary big">Reveal answer</button>
+    </div>
+
+    <!-- state: verdict -->
+    <div id="state-verdict" class="hidden">
+      <div id="verdict-banner" class="verdict"></div>
+      <div id="heard-line" class="heard-line hidden"></div>
+      <div class="answer-label">Correct answer:</div>
+      <div id="answer-text" class="answer-text"></div>
+      <div id="self-judge" class="judge-row hidden">
+        <button id="self-right" class="btn right big">&#10003; I got it</button>
+        <button id="self-wrong" class="btn wrong big">&#10007; I missed it</button>
+      </div>
+      <div id="override-row" class="override-row hidden">
+        <button id="override-btn" class="btn small ghost"></button>
+      </div>
+      <button id="next-btn" class="btn primary big hidden">Next</button>
+    </div>
+
+    <div id="clue-source" class="clue-source"></div>
   </div>
 </div>
 
 <!-- ===== Results modal ===== -->
 <div id="results-modal" class="modal hidden">
   <div class="modal-box">
-    <div class="clue-cat">FINAL SCORES</div>
-    <div id="results-list"></div>
+    <div class="clue-cat">GAME OVER</div>
+    <div id="results-score" class="results-score"></div>
+    <div id="results-grid" class="results-grid"></div>
     <div class="setup-actions">
       <button id="copy-results" class="btn primary">Copy results to share</button>
       <button id="back-to-menu" class="btn">Back to menu</button>

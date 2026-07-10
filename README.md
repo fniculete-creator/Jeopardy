@@ -1,37 +1,38 @@
-# Daily Jeopardy!
+# Daily Sports Jeopardy!
 
-A Jeopardy game you can play with friends every day, using **real clues from past Jeopardy! episodes** (seasons 37–40, aired 2020–2024).
+A quick, phone-first sports trivia game built on **real sports clues from past Jeopardy! episodes** (seasons 18–40, aired 2001–2024).
 
-Everyone who plays the "daily" game on the same calendar date gets the **exact same board** — same categories, same Daily Double spots, same Final Jeopardy — so you can compare scores with friends, Wordle-style.
+Everyone who plays the daily game on the same calendar date gets the **exact same board** — so you and your friends can each play on your own phones and compare scores, Wordle-style.
 
-## How to play
+## How it works
 
-1. Open `index.html` in a browser (or host the folder on GitHub Pages — see below).
-2. Enter player names (1–6 players) and hit **Play today's game**.
-3. One person acts as host: click a dollar value, read the clue aloud, let people answer, then **Show answer** and tap ✓ or ✗ next to each player who rang in.
-4. Play through **Jeopardy!**, **Double Jeopardy!** (with Daily Doubles and wagers), and **Final Jeopardy!** with per-player wagers.
-5. At the end, use **Copy results to share** to paste your scores into your group chat.
+- **One round, 30 clues** (6 sports categories × 5 clues) — no Double Jeopardy, no Final Jeopardy, no wagering.
+- **Every clue is worth 1 point**, and wrong answers cost nothing — so always guess!
+- **Tap to buzz in**: when a clue appears you have 12 seconds to hit the big red buzzer.
+- **Answer by voice**: after buzzing, speak your answer into the microphone. Speech recognition transcribes it and checks it against the real answer (fuzzy matching handles "what is…" phrasing, articles, close spellings, and accepted alternates). If it mishears you, one tap fixes the verdict.
+- **No mic? No problem**: on browsers without speech recognition (or if you decline mic access), you say your answer out loud, reveal the real one, and judge yourself.
+- At the end you get a score out of 30 and a shareable emoji grid of your board:
 
-Extras:
+```
+Daily Sports Jeopardy! 2026-07-10 — Ana
+21/30
+🟩🟩🟥🟩🟩🟩
+🟩🟥🟩🟩🟩🟥
+...
+```
 
-- Game state is saved in your browser, so a refresh resumes today's game.
-- Tap any score to manually correct it (host override).
-- **Play a random game** gives you a fresh board any time, independent of the daily one.
+Your game saves in the browser, so a refresh resumes where you left off. There's also a **random game** mode for extra rounds.
 
-## Hosting on GitHub Pages
+## Playing it
 
-To get a URL you can send to friends: repo **Settings → Pages → Source: Deploy from a branch**, pick your branch and `/ (root)`. Your game will be live at `https://<username>.github.io/Jeopardy/`.
+Open `index.html` in a browser. For a URL you can send to friends, enable GitHub Pages: repo **Settings → Pages → Source: Deploy from a branch**, pick your branch and `/ (root)` — the game goes live at `https://<username>.github.io/Jeopardy/`.
+
+Note: voice answers need a secure context (HTTPS or localhost) and work best in Chrome on Android and Safari on iOS. GitHub Pages is HTTPS, so it works great there.
 
 ## Where the clues come from
 
-Clue data is extracted from [jwolle1/jeopardy_clue_dataset](https://github.com/jwolle1/jeopardy_clue_dataset), a public dataset built from [J! Archive](https://j-archive.com/). The bundled `clues.js` contains:
-
-- 4,931 complete Jeopardy! round categories (5 clues each)
-- 4,717 complete Double Jeopardy! round categories
-- 920 Final Jeopardy! clues
+Clue data is extracted from [jwolle1/jeopardy_clue_dataset](https://github.com/jwolle1/jeopardy_clue_dataset), a public dataset built from [J! Archive](https://j-archive.com/). Sports categories are detected two ways: by category name (NFL, OLYMPIC, BASEBALL, …) and by content (categories where nearly every clue uses sports terms). The bundled `clues.js` has **694 complete 5-clue sports categories**; the game draws 6 per day from the pool, seeded by the date, so no server is needed for everyone to see the same game.
 
 Categories that depend on video, audio, or images ("seen here…", Clue Crew clues) are filtered out so everything works as text.
-
-The daily board is chosen with a seeded random number generator keyed on the local calendar date, so no server is needed for everyone to see the same game.
 
 > **Note:** Jeopardy! clues are the copyrighted material of Sony Pictures / Jeopardy Productions. This project is for personal, non-commercial play among friends.
