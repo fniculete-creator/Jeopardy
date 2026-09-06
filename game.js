@@ -36,7 +36,7 @@
   // hits a locally-run server; anywhere else, the kalshi-bots box.
   const LB_API = /^(localhost|127\.|192\.168\.)/.test(location.hostname)
     ? `http://${location.hostname}:8124/jeopardy`
-    : "https://32.194.248.231.nip.io/jeopardy";
+    : "https://100.57.37.231.nip.io/jeopardy";
 
   let state = null;       // persistent game state
   let active = null;      // {row, col, answer, judged}

@@ -17,7 +17,7 @@ curl -s localhost:8124/jeopardy/health   # -> {"ok": true}
 ```
 
 Then route it through the existing HTTPS reverse proxy for
-`32.194.248.231.nip.io` (the one already fronting the alpaca backend).
+`100.57.37.231.nip.io` (the one already fronting the alpaca backend).
 Caddy example — add inside that site block:
 
 ```
@@ -28,10 +28,10 @@ handle /jeopardy/* {
 
 (nginx equivalent: `location /jeopardy/ { proxy_pass http://127.0.0.1:8124; }`)
 
-Verify from outside: `curl -s https://32.194.248.231.nip.io/jeopardy/health`
+Verify from outside: `curl -s https://100.57.37.231.nip.io/jeopardy/health`
 
 The game front-end (game.js `LB_API`) already points at
-`https://32.194.248.231.nip.io/jeopardy` in production and
+`https://100.57.37.231.nip.io/jeopardy` in production and
 `http://localhost:8124/jeopardy` when served from localhost.
 
 ## Run locally
